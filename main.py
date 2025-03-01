@@ -43,13 +43,20 @@ with open(INFO_PATH, "rb") as file:
     office_file.decrypt(decrypted_workbook)
 
 
-def get_zp_df():
+def get_zp_df() -> pd.DataFrame:
+    def split_empls(empls_value: str) -> list[str]:
+        empls_value = [empls_value]
+        for key in ["\n", ",", "  "]:
+            empls_value = [x for emp in empls_value for x in emp.split(key)]
+        return empls_value
+
     df = pd.read_excel(decrypted_workbook, header=1, sheet_name="расчет ЗП")
     df[["Правило", "Сотрудник"]] = df[["Правило", "Сотрудник"]].ffill()
     new_df = pd.DataFrame(columns=df.columns)
 
     for _, row in df.iterrows():
-        empls = row["Сотрудник"].split("\n")
+        empls = split_empls(row["Сотрудник"])
+
         for emp in empls:
             if emp:
                 emp = emp.strip()
@@ -64,30 +71,27 @@ def get_zp_df():
                     row["Специализация"] = s
                     row["Сотрудник"] = emp
                     new_df.loc[len(new_df)] = row
-    # new_df["Сотрудник"] = new_df["Сотрудник"].apply(
-    #     lambda x: str(x).split(" ")[0] if x else ""
-    # )
     return new_df
 
 
-def get_files_df():
+def get_files_df() -> list[Path]:
     return [
         file for file in FROM_FILES_PATH.iterdir() if file.suffix in [".xlsx", ".xls"]
     ]
 
 
-def calc_zp(fl, zp_df):
-    def get_proc_to_zp_dict(zp_df):
+def calc_zp(fl: Path, zp_df: pd.DataFrame) -> None:
+    def get_proc_to_zp_dict(zp_df: pd.DataFrame) -> dict:
         proc_to_zp_dict = dict(zip(zp_df["Специализация"], zp_df["Процент в ЗП"]))
         return proc_to_zp_dict
 
-    def keep_only_digits(input_string):
+    def keep_only_digits(input_string: str) -> [int, None]:
         try:
             return int(re.sub(r"\D", "", str(input_string)))
         except ValueError:
             return
 
-    def get_closest_match(procedure, proc_to_zp):
+    def get_closest_match(procedure: str, proc_to_zp: dict) -> [str, None]:
         max_ratio = SIMILARITY_RATIO
         max_proc = None
         for proc in proc_to_zp:
@@ -100,8 +104,10 @@ def calc_zp(fl, zp_df):
                 )
         return max_proc
 
-    def get_match():
-        pass
+    def get_match(first: str, second: str) -> bool:
+        if not first or not second:
+            return False
+        return ratio(first, second) > SIMILARITY_RATIO
 
     export_fl = TO_FILES_PATH / fl.name
     shutil.copy(fl, export_fl)
@@ -110,16 +116,11 @@ def calc_zp(fl, zp_df):
     df = df.replace(np.nan, None)
     employee = (export_fl.stem.split(" ")[-1]).upper()
 
-    # zp_df = zp_df[zp_df["Сотрудник"].apply(lambda x: employee in x.upper())]
-    zp_df = zp_df[zp_df["Сотрудник"].str.upper().str.contains(employee.upper(), regex=False)]
-
-    # if zp_df.empty:
-    #     zp_df = zp_df[
-    #         zp_df["Сотрудник"].apply(lambda x: employee == str(x).split(" ")[0])
-    #     ]
-    # zp_df = zp_df[zp_df["Сотрудник"] == employee]
-
+    zp_df = zp_df[
+        zp_df["Сотрудник"].apply(lambda x: get_match(employee, x.split(" ")[0]))
+    ]
     if zp_df.empty:
+        print(f"Employee {employee} not found in the ZP file")
         return
 
     proc_to_zp = get_proc_to_zp_dict(zp_df)
@@ -134,25 +135,32 @@ def calc_zp(fl, zp_df):
             continue
 
         zp = ""
-        mp = proc_to_zp.get(procedure)
-        if not mp:
-            try_procedure = SPECIALIZATION_MAP.get(procedure)
-            if try_procedure:
-                mp = proc_to_zp.get(try_procedure)
-        if not mp:
-            procedure = get_closest_match(procedure, proc_to_zp)
-            mp = proc_to_zp.get(procedure)
 
         if procedure == "УСЛУГИ СОТРУДНИКАМ":
             zp = all_price
-        elif isinstance(mp, float):
-            if mp > 100:
-                zp = mp * quantity
-            else:
-                zp = mp * all_price
-        elif isinstance(mp, str):
-            if mp := keep_only_digits(mp):
-                zp = mp * quantity
+        elif procedure == "ТОВАРЫ НА ПРОДАЖУ":
+            zp = all_price * 0.05
+        elif procedure in ["СТРИЖКИ", "УКЛАДКИ"]:
+            zp = all_price * 0.5
+        elif procedure in ["ОКРАШИВАНИЕ ВОЛОС", "УХОДЫ ДЛЯ ВОЛОС"]:
+            zp = (all_price - all_price * 0.1) * 0.5
+        else:
+            mp = proc_to_zp.get(procedure)
+            if not mp:
+                try_procedure = SPECIALIZATION_MAP.get(procedure)
+                if try_procedure:
+                    mp = proc_to_zp.get(try_procedure)
+            if not mp:
+                procedure = get_closest_match(procedure, proc_to_zp)
+                mp = proc_to_zp.get(procedure)
+            if isinstance(mp, float):
+                if mp > 100:
+                    zp = mp * quantity
+                else:
+                    zp = mp * all_price
+            elif isinstance(mp, str):
+                if mp := keep_only_digits(mp):
+                    zp = mp * quantity
 
         zp_row.append(zp)
 
