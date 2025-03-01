@@ -1,0 +1,11 @@
+*.pyc
+
+.DS_Store
+
+.idea/
+.vscode/
+
+files/
+files_new/
+zp_file/
+config.yaml
