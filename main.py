@@ -22,9 +22,11 @@ def get_config() -> dict:
 config = get_config()
 
 CURRENT_PATH = Path(os.getcwd())
-INFO_PATH = CURRENT_PATH / "zp_file" / "ЗАРАБОТНАЯ ПЛАТА  2025.xlsx"
-FROM_FILES_PATH = CURRENT_PATH / "files"
-TO_FILES_PATH = CURRENT_PATH / "files_new"
+INFO_PATH = Path(
+    config.get("info_path") or CURRENT_PATH / "zp_file" / "ЗАРАБОТНАЯ ПЛАТА  2025.xlsx"
+)
+FROM_FILES_PATH = Path(config.get("files_path") or CURRENT_PATH / "files")
+TO_FILES_PATH = Path(config.get("files_new_path") or CURRENT_PATH / "files_new")
 PASSWD = str(config.get("password"))
 SIMILARITY_RATIO = 0.8
 
@@ -52,7 +54,8 @@ def get_zp_df() -> pd.DataFrame:
 
     df = pd.read_excel(decrypted_workbook, header=1, sheet_name="расчет ЗП")
     df[["Правило", "Сотрудник"]] = df[["Правило", "Сотрудник"]].ffill()
-    new_df = pd.DataFrame(columns=df.columns)
+    # new_df = pd.DataFrame(columns=df.columns)
+    rows = []
 
     for _, row in df.iterrows():
         empls = split_empls(row["Сотрудник"])
@@ -68,10 +71,11 @@ def get_zp_df() -> pd.DataFrame:
                     if not s:
                         continue
                     s = str(s).strip()
-                    row["Специализация"] = s
-                    row["Сотрудник"] = emp
-                    new_df.loc[len(new_df)] = row
-    return new_df
+                    new_row = row.copy()
+                    new_row["Специализация"] = s
+                    new_row["Сотрудник"] = emp
+                    rows.append(new_row)
+    return pd.DataFrame(rows, columns=df.columns)
 
 
 def get_files_df() -> list[Path]:
@@ -99,9 +103,6 @@ def calc_zp(fl: Path, zp_df: pd.DataFrame) -> None:
             if r > max_ratio:
                 max_ratio = r
                 max_proc = proc
-                print(
-                    f"Max ratio: {max_ratio}, proc: {procedure}, max proc: {max_proc}"
-                )
         return max_proc
 
     def get_match(first: str, second: str) -> bool:
@@ -109,8 +110,35 @@ def calc_zp(fl: Path, zp_df: pd.DataFrame) -> None:
             return False
         return ratio(first, second) > SIMILARITY_RATIO
 
+    def convert_xls_to_xlsx(file_path: Path) -> Path:
+        if file_path.suffix.lower() != ".xls":
+            return file_path
+
+        import xlwings as xw
+
+        xlsx_path = file_path.with_suffix(".xlsx")
+
+        app = xw.App(visible=False)
+        try:
+            wb = app.books.open(str(file_path))
+            wb.save(str(xlsx_path))
+            wb.close()
+            os.remove(file_path)
+        finally:
+            app.quit()
+
+        return xlsx_path
+
     export_fl = TO_FILES_PATH / fl.name
-    shutil.copy(fl, export_fl)
+    suffix = export_fl.suffix.lower()
+    if suffix == ".xls":
+        shutil.copy(fl, export_fl)
+        export_fl = convert_xls_to_xlsx(export_fl)
+    elif suffix == ".xlsx":
+        shutil.copy(fl, export_fl)
+    else:
+        print(f"File {fl} has unsupported format")
+        return
 
     df = pd.read_excel(export_fl)
     df = df.replace(np.nan, None)
@@ -136,31 +164,34 @@ def calc_zp(fl: Path, zp_df: pd.DataFrame) -> None:
 
         zp = ""
 
-        if procedure == "УСЛУГИ СОТРУДНИКАМ":
-            zp = all_price
-        elif procedure == "ТОВАРЫ НА ПРОДАЖУ":
-            zp = all_price * 0.05
-        elif procedure in ["СТРИЖКИ", "УКЛАДКИ"]:
-            zp = all_price * 0.5
-        elif procedure in ["ОКРАШИВАНИЕ ВОЛОС", "УХОДЫ ДЛЯ ВОЛОС"]:
-            zp = (all_price - all_price * 0.1) * 0.5
-        else:
-            mp = proc_to_zp.get(procedure)
-            if not mp:
-                try_procedure = SPECIALIZATION_MAP.get(procedure)
-                if try_procedure:
-                    mp = proc_to_zp.get(try_procedure)
-            if not mp:
-                procedure = get_closest_match(procedure, proc_to_zp)
+        match procedure:
+            case "УСЛУГИ СОТРУДНИКАМ":
+                zp = all_price
+            case "ТОВАРЫ НА ПРОДАЖУ":
+                zp = all_price * 0.05
+            case "СТРИЖКИ" | "УКЛАДКИ":
+                zp = all_price * 0.5
+            case "ОКРАШИВАНИЕ ВОЛОС" | "УХОДЫ ДЛЯ ВОЛОС":
+                zp = (all_price - all_price * 0.1) * 0.5
+            case "РЕСНИЦЫ" | "ВИЗАЖ":
+                zp = all_price * 0.5
+            case _:
                 mp = proc_to_zp.get(procedure)
-            if isinstance(mp, float):
-                if mp > 100:
-                    zp = mp * quantity
-                else:
-                    zp = mp * all_price
-            elif isinstance(mp, str):
-                if mp := keep_only_digits(mp):
-                    zp = mp * quantity
+                if not mp:
+                    try_procedure = SPECIALIZATION_MAP.get(procedure)
+                    if try_procedure:
+                        mp = proc_to_zp.get(try_procedure)
+                if not mp:
+                    procedure = get_closest_match(procedure, proc_to_zp)
+                    mp = proc_to_zp.get(procedure)
+                if isinstance(mp, float):
+                    if mp > 100:
+                        zp = mp * quantity
+                    else:
+                        zp = mp * all_price
+                elif isinstance(mp, str):
+                    if mp := keep_only_digits(mp):
+                        zp = mp * quantity
 
         zp_row.append(zp)
 

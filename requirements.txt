@@ -2,3 +2,4 @@ pandas
 msoffcrypto-tool
 xlrd
 pyyaml
+xlwings
