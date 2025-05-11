@@ -11,6 +11,18 @@ from pathlib import Path
 from Levenshtein import ratio
 
 from openpyxl.reader.excel import load_workbook
+import sys
+from PySide6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+from PySide6.QtCore import Slot
 
 
 def get_config() -> dict:
@@ -24,6 +36,7 @@ config = get_config()
 CURRENT_PATH = Path(os.getcwd())
 INFO_PATH = Path(config.get("info_path") or CURRENT_PATH / "zp_file" / "Расчет ЗП.xlsx")
 FROM_FILES_PATH = Path(config.get("files_path") or CURRENT_PATH / "files")
+
 TO_FILES_PATH = Path(config.get("files_new_path") or CURRENT_PATH / "files_new")
 PASSWD = str(config.get("password"))
 SIMILARITY_RATIO = 0.8
@@ -196,15 +209,110 @@ def calc_zp(fl: Path, zp_df: pd.DataFrame) -> None:
     for idx, value in enumerate(zp_row, start=2):  # Assuming header is in the first row
         sheet.cell(row=idx, column=new_column_index, value=value)
 
-    # Save the workbook
     book.save(export_fl)
 
 
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Расчет ЗП")
+        self.setGeometry(100, 100, 500, 300)
+
+        self.zp_label = QLabel(f"Файл расчета ЗП: {INFO_PATH}")
+        self.from_label = QLabel(f"Папка с файлами: {FROM_FILES_PATH}")
+        self.to_label = QLabel(f"Папка для результатов: {TO_FILES_PATH}")
+        self.zp_label.setWordWrap(True)
+
+        self.select_zp_button = QPushButton("Выбрать файл ЗП")
+        self.select_from_button = QPushButton("Выбрать папку с файлами")
+        self.select_to_button = QPushButton("Выбрать папку для результатов")
+        self.start_button = QPushButton("Старт")
+        self.start_button.clicked.connect(self.on_start_clicked)
+
+        self.select_zp_button.clicked.connect(self.on_select_file)
+        self.select_from_button.clicked.connect(self.on_select_from_dir)
+        self.select_to_button.clicked.connect(self.on_select_to_dir)
+        self.start_button.clicked.connect(self.on_start_clicked)
+
+        main_layout = QVBoxLayout()
+
+        pairs = [
+            (self.zp_label, self.select_zp_button),
+            (self.from_label, self.select_from_button),
+            (self.to_label, self.select_to_button),
+        ]
+
+        for label, button in pairs:
+            h_layout = QHBoxLayout()
+            h_layout.addWidget(label, stretch=1)
+            h_layout.addWidget(button)
+            main_layout.addLayout(h_layout)
+
+        main_layout.addWidget(self.start_button)
+
+        container = QWidget()
+        container.setLayout(main_layout)
+        self.setCentralWidget(container)
+
+    @Slot()
+    def on_select_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Выберите файл расчета ЗП", str(CURRENT_PATH), "Excel files (*.xlsx)"
+        )
+        if file_path:
+            # Обновляем конфиг
+            config = get_config()
+            config["info_path"] = file_path
+
+            # Сохраняем изменения
+            with open("config.yaml", "w") as file:
+                yaml.dump(config, file, allow_unicode=True)
+
+            # Обновляем глобальную переменную
+            global INFO_PATH
+            INFO_PATH = Path(file_path)
+
+    @Slot()
+    def on_select_from_dir(self):
+        dir_path = QFileDialog.getExistingDirectory(
+            self, "Выберите папку с файлами", str(CURRENT_PATH)
+        )
+        if dir_path:
+            config = get_config()
+            config["files_path"] = dir_path
+            with open("config.yaml", "w") as file:
+                yaml.dump(config, file, allow_unicode=True)
+            global FROM_FILES_PATH
+            FROM_FILES_PATH = Path(dir_path)
+            self.from_label.setText(f"Папка с файлами: {FROM_FILES_PATH}")
+
+    @Slot()
+    def on_select_to_dir(self):
+        dir_path = QFileDialog.getExistingDirectory(
+            self, "Выберите папку для результатов", str(CURRENT_PATH)
+        )
+        if dir_path:
+            config = get_config()
+            config["files_new_path"] = dir_path
+            with open("config.yaml", "w") as file:
+                yaml.dump(config, file, allow_unicode=True)
+            global TO_FILES_PATH
+            TO_FILES_PATH = Path(dir_path)
+            self.to_label.setText(f"Папка для результатов: {TO_FILES_PATH}")
+
+    @Slot()
+    def on_start_clicked(self):
+        zp_df = get_zp_df()
+
+        TO_FILES_PATH.mkdir(parents=True, exist_ok=True)
+
+        files = get_files_df()
+        for fl in files:
+            calc_zp(fl, zp_df)
+
+
 if __name__ == "__main__":
-    zp_df = get_zp_df()
-
-    TO_FILES_PATH.mkdir(parents=True, exist_ok=True)
-
-    files = get_files_df()
-    for fl in files:
-        calc_zp(fl, zp_df)
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
