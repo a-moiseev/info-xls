@@ -22,9 +22,7 @@ def get_config() -> dict:
 config = get_config()
 
 CURRENT_PATH = Path(os.getcwd())
-INFO_PATH = Path(
-    config.get("info_path") or CURRENT_PATH / "zp_file" / "ЗАРАБОТНАЯ ПЛАТА  2025.xlsx"
-)
+INFO_PATH = Path(config.get("info_path") or CURRENT_PATH / "zp_file" / "Расчет ЗП.xlsx")
 FROM_FILES_PATH = Path(config.get("files_path") or CURRENT_PATH / "files")
 TO_FILES_PATH = Path(config.get("files_new_path") or CURRENT_PATH / "files_new")
 PASSWD = str(config.get("password"))
@@ -38,12 +36,6 @@ SPECIALIZATION_MAP = {
     "МАССАЖ": "МАССАЖ лица",
 }
 
-decrypted_workbook = io.BytesIO()
-with open(INFO_PATH, "rb") as file:
-    office_file = msoffcrypto.OfficeFile(file)
-    office_file.load_key(password=PASSWD)
-    office_file.decrypt(decrypted_workbook)
-
 
 def get_zp_df() -> pd.DataFrame:
     def split_empls(empls_value: str) -> list[str]:
@@ -52,7 +44,7 @@ def get_zp_df() -> pd.DataFrame:
             empls_value = [x for emp in empls_value for x in emp.split(key)]
         return empls_value
 
-    df = pd.read_excel(decrypted_workbook, header=1, sheet_name="расчет ЗП")
+    df = pd.read_excel(INFO_PATH, header=1, sheet_name="расчет ЗП")
     df[["Правило", "Сотрудник"]] = df[["Правило", "Сотрудник"]].ffill()
     # new_df = pd.DataFrame(columns=df.columns)
     rows = []

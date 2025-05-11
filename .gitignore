@@ -9,3 +9,5 @@ files/
 files_new/
 zp_file/
 config.yaml
+dist/
+build/
