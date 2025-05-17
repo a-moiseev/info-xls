@@ -1,17 +1,14 @@
-import io
 import os
 import re
 import shutil
-import yaml
+import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import msoffcrypto
-from pathlib import Path
+import yaml
 from Levenshtein import ratio
-
-from openpyxl.reader.excel import load_workbook
-import sys
+from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -22,7 +19,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtCore import Slot
+from openpyxl.reader.excel import load_workbook
 
 
 def get_config() -> dict:
