@@ -215,14 +215,14 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Расчет ЗП")
         self.setGeometry(100, 100, 500, 300)
 
-        self.zp_label = QLabel(f"Файл расчета ЗП: {INFO_PATH}")
-        self.from_label = QLabel(f"Папка с файлами: {FROM_FILES_PATH}")
-        self.to_label = QLabel(f"Папка для результатов: {TO_FILES_PATH}")
+        self.zp_label = QLabel(f"Файл расчета ЗП:\n{INFO_PATH}")
+        self.from_label = QLabel(f"Папка с файлами:\n{FROM_FILES_PATH}")
+        self.to_label = QLabel(f"Папка для результатов:\n{TO_FILES_PATH}")
         self.zp_label.setWordWrap(True)
 
-        self.select_zp_button = QPushButton("Выбрать файл ЗП")
-        self.select_from_button = QPushButton("Выбрать папку с файлами")
-        self.select_to_button = QPushButton("Выбрать папку для результатов")
+        self.select_zp_button = QPushButton("Выбрать")
+        self.select_from_button = QPushButton("Выбрать")
+        self.select_to_button = QPushButton("Выбрать")
         self.start_button = QPushButton("Старт")
         self.start_button.clicked.connect(self.on_start_clicked)
 
