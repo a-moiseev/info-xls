@@ -144,7 +144,7 @@ def calc_zp(fl: Path, zp_df: pd.DataFrame) -> None:
 
     df = pd.read_excel(export_fl)
     df = df.replace(np.nan, None)
-    employee = (export_fl.stem.split(" ")[-1]).upper()
+    employee = (export_fl.stem.split(" ")[0]).upper()
 
     zp_df = zp_df[
         zp_df["Сотрудник"].apply(lambda x: get_match(employee, x.split(" ")[0]))
@@ -205,6 +205,15 @@ def calc_zp(fl: Path, zp_df: pd.DataFrame) -> None:
     # Add the new column to the existing sheet
     for idx, value in enumerate(zp_row, start=2):  # Assuming header is in the first row
         sheet.cell(row=idx, column=new_column_index, value=value)
+
+    # Удаляем столбцы E, G и H
+    cols_to_delete = ["H", "G", "E"]
+    for col in cols_to_delete:
+        sheet.delete_cols(sheet[col + "1"].column)
+    new_column_index = new_column_index - 3
+
+    sum_formula = f"=SUM({sheet.cell(row=2, column=new_column_index).coordinate}:{sheet.cell(row=len(zp_row), column=new_column_index).coordinate})"
+    sheet.cell(row=len(zp_row) + 1, column=new_column_index, value=sum_formula)
 
     book.save(export_fl)
 
