@@ -27,6 +27,8 @@ class CalcZP:
         self.zp_df = None
         self.files = None
 
+        self.summary_df = None
+
         self.config.to_files_path.mkdir(parents=True, exist_ok=True)
 
     def get_zp_df(self) -> pd.DataFrame:
@@ -38,7 +40,6 @@ class CalcZP:
 
         df = pd.read_excel(self.config.info_path, header=1, sheet_name="расчет ЗП")
         df[["Правило", "Сотрудник"]] = df[["Правило", "Сотрудник"]].ffill()
-        # new_df = pd.DataFrame(columns=df.columns)
         rows = []
 
         for _, row in df.iterrows():
@@ -130,8 +131,11 @@ class CalcZP:
 
         zp_df = zp_df[
             zp_df["Сотрудник"].apply(
-                lambda x: get_match(employee, x.split(" ")[0]),
-                self.config.similarity_ratio,
+                lambda x: get_match(
+                    employee,
+                    x.split(" ")[0],
+                    self.config.similarity_ratio,
+                ),
             )
         ]
         if zp_df.empty:
@@ -199,18 +203,39 @@ class CalcZP:
             sheet.delete_cols(sheet[col + "1"].column)
         new_column_index = new_column_index - 3
 
+        # Calculate sum of salary values
+        total_salary = sum(val for val in zp_row if isinstance(val, (int, float)))
+
         sum_formula = f"=SUM({sheet.cell(row=2, column=new_column_index).coordinate}:{sheet.cell(row=len(zp_row), column=new_column_index).coordinate})"
         sheet.cell(row=len(zp_row) + 1, column=new_column_index, value=sum_formula)
 
         book.save(export_fl)
 
+        # Add to summary
+        self.add_to_summary(employee, total_salary)
+
+    def add_to_summary(self, employee: str, total_salary: float):
+        """Add employee and their total salary to summary DataFrame."""
+        new_row = pd.DataFrame(
+            {"Сотрудник": [employee.capitalize()], "Сумма ЗП": [total_salary]}
+        )
+        self.summary_df = pd.concat([self.summary_df, new_row], ignore_index=True)
+
     def calculate(self):
+        self.summary_df = pd.DataFrame(columns=["Сотрудник", "Сумма ЗП"])
+
         self.zp_df = self.get_zp_df()
         self.files = self.get_files_df()
 
         if not self.files:
+            print("No files")
             return
 
         for fl in self.files:
             print(f"Processing file: {fl.name}")
             self.calc_zp(fl, self.zp_df)
+
+        # Save summary file
+        summary_path = self.config.to_files_path / "Общий файл.xlsx"
+        self.summary_df.to_excel(summary_path, index=False)
+        print(f"Summary saved to: {summary_path}")
