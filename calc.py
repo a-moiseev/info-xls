@@ -28,8 +28,36 @@ class CalcZP:
         self.files = None
 
         self.summary_df = None
+        self.periods = set()  # Track unique periods
 
         self.config.to_files_path.mkdir(parents=True, exist_ok=True)
+
+    def parse_date_period(self, file_path: Path) -> str:
+        """Extract date period from employee file."""
+        try:
+            # Read first few rows to find date string
+            df = pd.read_excel(file_path, nrows=5)
+            
+            # Look for date pattern in first few rows
+            for i in range(min(5, len(df))):
+                for col in df.columns:
+                    cell_value = str(df.iloc[i][col])
+                    # Pattern: "за период с 16.07.2025 по 30.07.2025"
+                    pattern = r'с\s+(\d{1,2}\.\d{1,2}\.\d{4})\s+по\s+(\d{1,2}\.\d{1,2}\.\d{4})'
+                    match = re.search(pattern, cell_value)
+                    if match:
+                        start_date, end_date = match.groups()
+                        # Format as "16.07-30.07.2025" (same year always)
+                        start_parts = start_date.split('.')
+                        end_parts = end_date.split('.')
+                        return f"{start_parts[0]}.{start_parts[1]}-{end_parts[0]}.{end_parts[1]}.{end_parts[2]}"
+            
+            # If no date found, return default
+            return "Период не найден"
+            
+        except Exception as e:
+            print(f"Error parsing date from {file_path}: {e}")
+            return "Ошибка даты"
 
     def get_zp_df(self) -> pd.DataFrame:
         def split_empls(empls_value: str) -> list[str]:
@@ -211,18 +239,36 @@ class CalcZP:
 
         book.save(export_fl)
 
-        # Add to summary
-        self.add_to_summary(employee, total_salary)
+        # Parse date period and add to summary
+        period = self.parse_date_period(fl)
+        self.periods.add(period)
+        self.add_to_summary(employee, total_salary, period)
 
-    def add_to_summary(self, employee: str, total_salary: float):
+    def add_to_summary(self, employee: str, total_salary: float, period: str):
         """Add employee and their total salary to summary DataFrame."""
-        new_row = pd.DataFrame(
-            {"Сотрудник": [employee.capitalize()], "Сумма ЗП": [total_salary]}
-        )
-        self.summary_df = pd.concat([self.summary_df, new_row], ignore_index=True)
+        employee_name = employee.capitalize()
+        
+        # Check if employee already exists
+        if employee_name in self.summary_df['Сотрудник'].values:
+            # Update existing row
+            row_idx = self.summary_df[self.summary_df['Сотрудник'] == employee_name].index[0]
+            # Add period column if it doesn't exist
+            if period not in self.summary_df.columns:
+                self.summary_df[period] = 0
+            self.summary_df.at[row_idx, period] = total_salary
+        else:
+            # Create new row
+            new_row_data = {"Сотрудник": employee_name}
+            # Add zeros for all existing periods
+            for existing_period in self.periods:
+                new_row_data[existing_period] = total_salary if existing_period == period else 0
+            
+            new_row = pd.DataFrame([new_row_data])
+            self.summary_df = pd.concat([self.summary_df, new_row], ignore_index=True)
 
     def calculate(self):
-        self.summary_df = pd.DataFrame(columns=["Сотрудник", "Сумма ЗП"])
+        self.summary_df = pd.DataFrame(columns=["Сотрудник"])
+        self.periods = set()
 
         self.zp_df = self.get_zp_df()
         self.files = self.get_files_df()
@@ -235,7 +281,31 @@ class CalcZP:
             print(f"Processing file: {fl.name}")
             self.calc_zp(fl, self.zp_df)
 
-        # Save summary file
+        # Fill missing period columns with 0 for all employees
+        for period in self.periods:
+            if period not in self.summary_df.columns:
+                self.summary_df[period] = 0
+
+        # Save summary file with formulas
         summary_path = self.config.to_files_path / "Общий файл.xlsx"
-        self.summary_df.to_excel(summary_path, index=False)
+        
+        # Save using ExcelWriter to add formulas
+        with pd.ExcelWriter(summary_path, engine='openpyxl') as writer:
+            self.summary_df.to_excel(writer, index=False, sheet_name='Sheet1')
+            
+            # Get workbook and worksheet to add sum formulas
+            workbook = writer.book
+            worksheet = writer.sheets['Sheet1']
+            
+            # Add sum formulas for each period column (skip first column "Сотрудник")
+            last_row = len(self.summary_df) + 1  # +1 for header
+            for col_idx, col_name in enumerate(self.summary_df.columns[1:], start=2):  # Start from column B
+                col_letter = worksheet.cell(row=1, column=col_idx).column_letter
+                # Add sum formula in the row after last data row
+                sum_formula = f"=SUM({col_letter}2:{col_letter}{last_row})"
+                worksheet.cell(row=last_row + 1, column=col_idx, value=sum_formula)
+            
+            # Add "ИТОГО" label in first column of sum row
+            worksheet.cell(row=last_row + 1, column=1, value="ИТОГО")
+        
         print(f"Summary saved to: {summary_path}")
