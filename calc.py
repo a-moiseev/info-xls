@@ -286,6 +286,9 @@ class CalcZP:
             if period not in self.summary_df.columns:
                 self.summary_df[period] = 0
 
+        # Sort by surname (assuming surname is first word in "Сотрудник" column)
+        self.summary_df = self.summary_df.sort_values('Сотрудник').reset_index(drop=True)
+
         # Save summary file with formulas
         summary_path = self.config.to_files_path / "Общий файл.xlsx"
         
