@@ -67,10 +67,10 @@ echo ====================================
 REM Check if spec file exists
 if exist calc_zp.spec (
     echo Using existing spec file...
-    pyinstaller calc_zp.spec
+    python -m PyInstaller calc_zp.spec
 ) else (
     echo Creating executable...
-    pyinstaller --onefile --windowed --name="Расчет_ЗП" main.py
+    python -m PyInstaller --onefile --windowed --name="infoclinic_xls" main.py
 )
 
 echo.
