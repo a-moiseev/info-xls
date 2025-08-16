@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QProgressBar,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -39,7 +40,6 @@ class MainWindow(QMainWindow):
         self.select_zp_button.clicked.connect(self.on_select_file)
         self.select_from_button.clicked.connect(self.on_select_from_dir)
         self.select_to_button.clicked.connect(self.on_select_to_dir)
-        self.start_button.clicked.connect(self.on_start_clicked)
 
         main_layout = QVBoxLayout()
 
@@ -55,6 +55,10 @@ class MainWindow(QMainWindow):
             h_layout.addWidget(button)
             main_layout.addLayout(h_layout)
 
+        # Добавляем прогресс-бар
+        self.progress_bar = QProgressBar()
+        main_layout.addWidget(self.progress_bar)
+        
         main_layout.addWidget(self.start_button)
 
         container = QWidget()
@@ -98,7 +102,20 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def on_start_clicked(self):
-        self.calc_zp.calculate()
+        # Настраиваем прогресс-бар
+        files_count = len(self.calc_zp.get_files_df())
+        # Учитываем все этапы: для каждого файла (копирование + конвертация + обработка + сохранение) + итоговый файл
+        total_steps = files_count * 4 + 1  # 4 этапа на файл + 1 этап сохранения итогового файла
+        self.progress_bar.setMaximum(total_steps)
+        self.progress_bar.setValue(0)
+        
+        # Передаем callback для обновления прогресса
+        self.calc_zp.calculate(progress_callback=self.update_progress)
+        
+    def update_progress(self, current_value):
+        """Обновляет прогресс-бар."""
+        self.progress_bar.setValue(current_value)
+        QApplication.processEvents()  # Обновляем GUI
 
 
 if __name__ == "__main__":
