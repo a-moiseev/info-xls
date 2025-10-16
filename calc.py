@@ -246,8 +246,8 @@ class CalcZP:
             sheet.delete_cols(sheet[col + "1"].column)
         new_column_index = new_column_index - 3
 
-        # Calculate sum of salary values
-        total_salary = sum(val for val in zp_row if isinstance(val, (int, float)))
+        # Calculate sum of salary values and round to integer
+        total_salary = round(sum(val for val in zp_row if isinstance(val, (int, float))))
 
         sum_formula = f"=SUM({sheet.cell(row=2, column=new_column_index).coordinate}:{sheet.cell(row=len(zp_row), column=new_column_index).coordinate})"
         sheet.cell(row=len(zp_row) + 1, column=new_column_index, value=sum_formula)
@@ -266,6 +266,8 @@ class CalcZP:
     def add_to_summary(self, employee: str, total_salary: float, period: str):
         """Add employee and their total salary to summary DataFrame."""
         employee_name = employee.capitalize()
+        # Round total_salary to integer
+        total_salary = round(total_salary)
 
         # Check if employee already exists
         if employee_name in self.summary_df["Сотрудник"].values:
@@ -313,6 +315,13 @@ class CalcZP:
         self.summary_df = self.summary_df.sort_values("Сотрудник").reset_index(
             drop=True
         )
+
+        # Round all numeric columns to integers
+        for col in self.summary_df.columns:
+            if col != "Сотрудник":
+                self.summary_df[col] = self.summary_df[col].apply(
+                    lambda x: round(x) if isinstance(x, (int, float)) else x
+                )
 
         # Save summary file with formulas
         summary_path = self.config.to_files_path / "Ведомость.xlsx"
