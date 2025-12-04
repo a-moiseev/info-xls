@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QProgressBar,
     QPushButton,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -58,7 +59,27 @@ class MainWindow(QMainWindow):
         # Добавляем прогресс-бар
         self.progress_bar = QProgressBar()
         main_layout.addWidget(self.progress_bar)
-        
+
+        # Добавляем кнопку переключения логов
+        self.log_toggle_button = QPushButton("Показать лог ▼")
+        self.log_toggle_button.setMaximumHeight(30)
+        self.log_toggle_button.clicked.connect(self.toggle_log)
+        main_layout.addWidget(self.log_toggle_button)
+
+        # Добавляем текстовое окно логов (по умолчанию скрыто)
+        self.log_window = QTextEdit()
+        self.log_window.setReadOnly(True)
+        self.log_window.setMaximumHeight(0)  # Начальное состояние - скрыто
+        self.log_window.setStyleSheet("""
+            QTextEdit {
+                font-family: 'Courier New', monospace;
+                font-size: 10pt;
+                background-color: #f5f5f5;
+                border: 1px solid #ccc;
+            }
+        """)
+        main_layout.addWidget(self.log_window)
+
         main_layout.addWidget(self.start_button)
 
         container = QWidget()
@@ -109,13 +130,39 @@ class MainWindow(QMainWindow):
         self.progress_bar.setMaximum(total_steps)
         self.progress_bar.setValue(0)
         
-        # Передаем callback для обновления прогресса
-        self.calc_zp.calculate(progress_callback=self.update_progress)
+        # Передаем callback для обновления прогресса и логирования
+        self.calc_zp.calculate(
+            progress_callback=self.update_progress,
+            log_callback=self.log_message
+        )
         
     def update_progress(self, current_value):
         """Обновляет прогресс-бар."""
         self.progress_bar.setValue(current_value)
         QApplication.processEvents()  # Обновляем GUI
+
+    @Slot()
+    def toggle_log(self):
+        """Переключает видимость окна логов."""
+        if self.log_window.maximumHeight() == 0:
+            # Раскрываем
+            self.log_window.setMaximumHeight(200)
+            self.log_toggle_button.setText("Скрыть лог ▲")
+            self.setGeometry(100, 100, 500, 550)  # Увеличиваем высоту окна
+        else:
+            # Скрываем
+            self.log_window.setMaximumHeight(0)
+            self.log_toggle_button.setText("Показать лог ▼")
+            self.setGeometry(100, 100, 500, 300)  # Исходная высота
+
+    def log_message(self, message: str):
+        """Добавляет сообщение в окно логов."""
+        self.log_window.append(message)
+        # Авто-прокрутка вниз
+        self.log_window.verticalScrollBar().setValue(
+            self.log_window.verticalScrollBar().maximum()
+        )
+        QApplication.processEvents()
 
 
 if __name__ == "__main__":

@@ -56,7 +56,7 @@ class CalcZP:
             return "Период не найден"
 
         except Exception as e:
-            print(f"Error parsing date from {file_path}: {e}")
+            print(f"Ошибка чтения даты из {file_path}: {e}")
             return "Ошибка даты"
 
     def get_zp_df(self) -> pd.DataFrame:
@@ -97,7 +97,7 @@ class CalcZP:
             if file.suffix in [".xlsx", ".xls"]
         ]
 
-    def calc_zp(self, fl: Path, zp_df: pd.DataFrame, progress_callback=None, file_index=0) -> None:
+    def calc_zp(self, fl: Path, zp_df: pd.DataFrame, progress_callback=None, log_callback=None, file_index=0) -> None:
         def get_proc_to_zp_dict(zp_df: pd.DataFrame) -> dict:
             proc_to_zp_dict = dict(zip(zp_df["Специализация"], zp_df["Процент в ЗП"]))
             return proc_to_zp_dict
@@ -161,16 +161,23 @@ class CalcZP:
             if progress_callback:
                 progress_callback(file_index * 4 + 2)
         else:
-            print(f"File {fl} has unsupported format")
+            print(f"Файл {fl} имеет неподдерживаемый формат")
             return
 
         # Этап 3: Обработка данных
         if progress_callback:
             progress_callback(file_index * 4 + 3)
-            
-        df = pd.read_excel(export_fl)
-        df = df.replace(np.nan, None)
-        employee = (export_fl.stem.split(" ")[0]).upper()
+
+        try:
+            df = pd.read_excel(export_fl)
+            df = df.replace(np.nan, None)
+        except Exception as e:
+            raise Exception(f"Не удалось прочитать Excel файл: {e}")
+
+        try:
+            employee = (export_fl.stem.split(" ")[0]).upper()
+        except IndexError:
+            raise Exception(f"Неверный формат имени файла: {export_fl.name}")
 
         zp_df = zp_df[
             zp_df["Сотрудник"].apply(
@@ -182,7 +189,10 @@ class CalcZP:
             )
         ]
         if zp_df.empty:
-            print(f"Employee {employee} not found in the ZP file")
+            error_msg = f"Сотрудник {employee} не найден в зарплатном файле"
+            print(error_msg)
+            if log_callback:
+                log_callback(f"ВНИМАНИЕ: {error_msg}")
             return
 
         proc_to_zp = get_proc_to_zp_dict(zp_df)
@@ -230,33 +240,36 @@ class CalcZP:
             zp_row.append(zp)
 
         # Load the existing workbook and sheet
-        book = load_workbook(export_fl)
-        sheet = book.active
-        new_column_index = sheet.max_column + 1
+        try:
+            book = load_workbook(export_fl)
+            sheet = book.active
+            new_column_index = sheet.max_column + 1
 
-        # Add the new column to the existing sheet
-        for idx, value in enumerate(
-            zp_row, start=2
-        ):  # Assuming header is in the first row
-            sheet.cell(row=idx, column=new_column_index, value=value)
+            # Add the new column to the existing sheet
+            for idx, value in enumerate(
+                zp_row, start=2
+            ):  # Assuming header is in the first row
+                sheet.cell(row=idx, column=new_column_index, value=value)
 
-        # Удаляем столбцы E, G и H
-        cols_to_delete = ["H", "G", "E"]
-        for col in cols_to_delete:
-            sheet.delete_cols(sheet[col + "1"].column)
-        new_column_index = new_column_index - 3
+            # Удаляем столбцы E, G и H
+            cols_to_delete = ["H", "G", "E"]
+            for col in cols_to_delete:
+                sheet.delete_cols(sheet[col + "1"].column)
+            new_column_index = new_column_index - 3
 
-        # Calculate sum of salary values and round to integer
-        total_salary = round(sum(val for val in zp_row if isinstance(val, (int, float))))
+            # Calculate sum of salary values and round to integer
+            total_salary = round(sum(val for val in zp_row if isinstance(val, (int, float))))
 
-        sum_formula = f"=SUM({sheet.cell(row=2, column=new_column_index).coordinate}:{sheet.cell(row=len(zp_row), column=new_column_index).coordinate})"
-        sheet.cell(row=len(zp_row) + 1, column=new_column_index, value=sum_formula)
+            sum_formula = f"=SUM({sheet.cell(row=2, column=new_column_index).coordinate}:{sheet.cell(row=len(zp_row), column=new_column_index).coordinate})"
+            sheet.cell(row=len(zp_row) + 1, column=new_column_index, value=sum_formula)
 
-        # Этап 4: Сохранение файла
-        if progress_callback:
-            progress_callback(file_index * 4 + 4)
-            
-        book.save(export_fl)
+            # Этап 4: Сохранение файла
+            if progress_callback:
+                progress_callback(file_index * 4 + 4)
+
+            book.save(export_fl)
+        except Exception as e:
+            raise Exception(f"Не удалось изменить рабочую книгу: {e}")
 
         # Parse date period and add to summary
         period = self.parse_date_period(fl)
@@ -291,7 +304,7 @@ class CalcZP:
             new_row = pd.DataFrame([new_row_data])
             self.summary_df = pd.concat([self.summary_df, new_row], ignore_index=True)
 
-    def calculate(self, progress_callback=None):
+    def calculate(self, progress_callback=None, log_callback=None):
         self.summary_df = pd.DataFrame(columns=["Сотрудник"])
         self.periods = set()
 
@@ -299,12 +312,32 @@ class CalcZP:
         self.files = self.get_files_df()
 
         if not self.files:
-            print("No files")
+            print("Нет файлов для обработки")
             return
 
+        failed_files = []
         for idx, fl in enumerate(self.files):
-            print(f"Processing file: {fl.name}")
-            self.calc_zp(fl, self.zp_df, progress_callback, idx)
+            log_message = f"Обрабатываю файл: {fl.name}"
+            print(log_message)
+            if log_callback:
+                log_callback(log_message)
+
+            try:
+                self.calc_zp(fl, self.zp_df, progress_callback, log_callback, idx)
+            except Exception as e:
+                error_msg = f"ОШИБКА: Не удалось обработать {fl.name}: {str(e)}"
+                print(error_msg)
+                if log_callback:
+                    log_callback(error_msg)
+                failed_files.append((fl.name, str(e)))
+                continue
+
+        # Log summary if there were any failures
+        if failed_files:
+            summary = f"Завершено с {len(failed_files)} ошибкой(-ами)"
+            print(summary)
+            if log_callback:
+                log_callback(summary)
 
         # Fill missing period columns with 0 for all employees
         for period in self.periods:
@@ -320,7 +353,7 @@ class CalcZP:
         for col in self.summary_df.columns:
             if col != "Сотрудник":
                 self.summary_df[col] = self.summary_df[col].apply(
-                    lambda x: round(x) if isinstance(x, (int, float)) else x
+                    lambda x: round(x) if pd.notna(x) and isinstance(x, (int, float)) else (0 if pd.isna(x) else x)
                 )
 
         # Save summary file with formulas
@@ -350,5 +383,8 @@ class CalcZP:
         # Финальный этап: Сохранение итогового файла
         if progress_callback:
             progress_callback(len(self.files) * 4 + 1)
-            
-        print(f"Summary saved to: {summary_path}")
+
+        success_msg = f"Ведомость сохранена: {summary_path.name}"
+        print(success_msg)
+        if log_callback:
+            log_callback(success_msg)
