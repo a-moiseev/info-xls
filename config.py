@@ -24,6 +24,7 @@ class Config:
 
         self.passwd = str(params.get("password"))
         self.similarity_ratio = 0.8
+        self.percent = float(params.get("percent", 0.0))
 
     @staticmethod
     def get_config() -> dict:
@@ -50,6 +51,8 @@ class Config:
                 self.passwd = str(value)
             case "similarity_ratio":
                 self.similarity_ratio = float(value)
+            case "percent":
+                self.percent = float(value)
 
         with open("config.yaml", "w") as file:
             yaml.dump(params, file, allow_unicode=True)

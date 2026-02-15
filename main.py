@@ -3,6 +3,7 @@ import sys
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
     QApplication,
+    QDoubleSpinBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -55,6 +56,20 @@ class MainWindow(QMainWindow):
             h_layout.addWidget(label, stretch=1)
             h_layout.addWidget(button)
             main_layout.addLayout(h_layout)
+
+        # Добавляем поле процента
+        percent_layout = QHBoxLayout()
+        self.percent_label = QLabel("Процент:")
+        self.percent_spinbox = QDoubleSpinBox()
+        self.percent_spinbox.setDecimals(2)
+        self.percent_spinbox.setRange(0.0, 100.0)
+        self.percent_spinbox.setSingleStep(0.01)
+        self.percent_spinbox.setValue(config.percent)
+        self.percent_spinbox.setSuffix(" %")
+        self.percent_spinbox.valueChanged.connect(self.on_percent_changed)
+        percent_layout.addWidget(self.percent_label, stretch=1)
+        percent_layout.addWidget(self.percent_spinbox)
+        main_layout.addLayout(percent_layout)
 
         # Добавляем прогресс-бар
         self.progress_bar = QProgressBar()
@@ -120,6 +135,10 @@ class MainWindow(QMainWindow):
             self.to_label.setText(
                 f"Папка для результатов:\n{self.config.to_files_path}"
             )
+
+    @Slot(float)
+    def on_percent_changed(self, value):
+        self.config.update_param("percent", round(value, 2))
 
     @Slot()
     def on_start_clicked(self):

@@ -237,6 +237,9 @@ class CalcZP:
                         if mp := keep_only_digits(mp):
                             zp = mp * quantity
 
+            if zp and self.config.percent > 0:
+                zp = round(zp * (1 - self.config.percent / 100), 2)
+
             zp_row.append(zp)
 
         # Load the existing workbook and sheet
